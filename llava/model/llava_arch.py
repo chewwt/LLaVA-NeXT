@@ -252,7 +252,7 @@ class LlavaMetaForCausalLM(ABC):
         vision_tower = self.get_vision_tower()
         # rank_print(modalities)
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
-            return input_ids, position_ids, attention_mask, past_key_values, None, labels
+            return input_ids, position_ids, attention_mask, past_key_values, None, labels, torch.ones_like(input_ids).bool().to(input_ids.device)
 
         if isinstance(modalities, str):
             modalities = [modalities]
@@ -445,6 +445,10 @@ class LlavaMetaForCausalLM(ABC):
         new_input_embeds = []
         new_labels = []
         cur_image_idx = 0
+
+        # CUSTOM
+        image_masks = []  # tensor of bool arr. 1 for text embed, 0 for image embed
+
         # rank_print("Inserting Images embedding")
         for batch_idx, cur_input_ids in enumerate(input_ids):
             num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
@@ -471,9 +475,16 @@ class LlavaMetaForCausalLM(ABC):
             cur_new_input_embeds = []
             cur_new_labels = []
 
+            # CUSTOM
+            cur_image_mask = []
+
             for i in range(num_images + 1):
                 cur_new_input_embeds.append(cur_input_embeds_no_im[i])
                 cur_new_labels.append(cur_labels_noim[i])
+
+                # CUSTOM
+                cur_image_mask += [1] * len(cur_input_embeds_no_im[i])
+
                 if i < num_images:
                     try:
                         cur_image_features = image_features[cur_image_idx]
@@ -483,6 +494,9 @@ class LlavaMetaForCausalLM(ABC):
                     cur_new_input_embeds.append(cur_image_features)
                     cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
 
+                    # CUSTOM
+                    cur_image_mask += [0] * len(cur_image_features)
+
             cur_new_input_embeds = [x.to(self.device) for x in cur_new_input_embeds]
 
             # import pdb; pdb.set_trace()
@@ -491,6 +505,9 @@ class LlavaMetaForCausalLM(ABC):
 
             new_input_embeds.append(cur_new_input_embeds)
             new_labels.append(cur_new_labels)
+
+            # CUSTOM
+            image_masks.append(torch.Tensor(cur_image_mask).to(self.device))
 
         # Truncate sequences to max length as image embeddings can make the sequence longer
         tokenizer_model_max_length = getattr(self.config, "tokenizer_model_max_length", None)
@@ -531,6 +548,9 @@ class LlavaMetaForCausalLM(ABC):
         new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)
         # rank0_print("tokenizer padding")
 
+        # CUSTOM
+        image_masks = torch.stack(image_masks, dim=0)
+
         if _labels is None:
             new_labels = None
         else:
@@ -552,7 +572,7 @@ class LlavaMetaForCausalLM(ABC):
             position_ids[:, split_position:] += right_add
         # import pdb; pdb.set_trace()
         # rank0_print("Finish preparing")
-        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels
+        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels, image_masks
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):
         if model_args.mm_use_im_patch_token:
