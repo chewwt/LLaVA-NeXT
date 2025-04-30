@@ -81,10 +81,30 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         modalities: Optional[List[str]] = ["image"],
         dpo_forward: Optional[bool] = False,
         cache_position=None,
+        # CUSTOM
+        proc_im_embeds_func: callable = None
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
         if inputs_embeds is None:
-            (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels, image_masks) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes)
+            (
+                input_ids,
+                position_ids,
+                attention_mask,
+                past_key_values,
+                inputs_embeds,
+                labels,
+                image_masks
+            ) = self.prepare_inputs_labels_for_multimodal(
+                input_ids,
+                position_ids,
+                attention_mask,
+                past_key_values,
+                labels,
+                images,
+                modalities,
+                image_sizes,
+                proc_im_embeds_func=proc_im_embeds_func  # CUSTOM
+            )
 
             # CUSTOM to track embeds' image mask
             self.dummy_out(image_masks)
@@ -127,6 +147,8 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         images: Optional[torch.Tensor] = None,
         image_sizes: Optional[torch.Tensor] = None,
         modalities: Optional[List[str]] = ["image"],
+        # CUSTOM
+        proc_im_embeds_func: callable = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         position_ids = kwargs.pop("position_ids", None)
@@ -135,7 +157,25 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
             raise NotImplementedError("`inputs_embeds` is not supported")
 
         if images is not None:
-            (inputs, position_ids, attention_mask, _, inputs_embeds, _, image_masks) = self.prepare_inputs_labels_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
+            (
+                inputs,
+                position_ids,
+                attention_mask,
+                _,
+                inputs_embeds,
+                _,
+                image_masks
+            ) = self.prepare_inputs_labels_for_multimodal(
+                inputs,
+                position_ids,
+                attention_mask,
+                None,
+                None,
+                images,
+                modalities,
+                image_sizes=image_sizes,
+                proc_im_embeds_func=proc_im_embeds_func  # CUSTOM
+            )
         else:
             inputs_embeds = self.get_model().embed_tokens(inputs)
             image_masks = torch.stack([torch.Tensor([1]*len(e)).to(self.device) for e in inputs_embeds], dim=0)

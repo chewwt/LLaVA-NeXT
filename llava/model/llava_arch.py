@@ -248,7 +248,19 @@ class LlavaMetaForCausalLM(ABC):
         image_feature = image_feature.permute(1, 2, 0).contiguous()
         return image_feature
 
-    def prepare_inputs_labels_for_multimodal(self, input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities=["image"], image_sizes=None):
+    def prepare_inputs_labels_for_multimodal(
+            self,
+            input_ids,
+            position_ids,
+            attention_mask,
+            past_key_values,
+            labels,
+            images,
+            modalities=["image"],
+            image_sizes=None,
+            # CUSTOM
+            proc_im_embeds_func: callable = None,
+        ):
         vision_tower = self.get_vision_tower()
         # rank_print(modalities)
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
@@ -490,6 +502,12 @@ class LlavaMetaForCausalLM(ABC):
                         cur_image_features = image_features[cur_image_idx]
                     except IndexError:
                         cur_image_features = image_features[cur_image_idx - 1]
+
+                    # CUSTOM
+                    if proc_im_embeds_func is not None:
+                        # to post-process image features, to reduce number of tokens etc
+                        cur_image_features = proc_im_embeds_func(cur_image_features)
+
                     cur_image_idx += 1
                     cur_new_input_embeds.append(cur_image_features)
                     cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
@@ -507,7 +525,8 @@ class LlavaMetaForCausalLM(ABC):
             new_labels.append(cur_new_labels)
 
             # CUSTOM
-            image_masks.append(torch.Tensor(cur_image_mask).to(self.device))
+            image_masks.append(torch.Tensor(cur_image_mask).bool().to(self.device))
+            # print('in MM', image_masks, image_masks[-1].sum(), image_masks[-1].shape)
 
         # Truncate sequences to max length as image embeddings can make the sequence longer
         tokenizer_model_max_length = getattr(self.config, "tokenizer_model_max_length", None)
@@ -550,6 +569,7 @@ class LlavaMetaForCausalLM(ABC):
 
         # CUSTOM
         image_masks = torch.stack(image_masks, dim=0)
+        # print('after stack', image_masks, image_masks.sum(), image_masks.shape)
 
         if _labels is None:
             new_labels = None
