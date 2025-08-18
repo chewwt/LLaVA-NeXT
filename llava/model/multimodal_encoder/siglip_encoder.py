@@ -544,6 +544,7 @@ class SigLipVisionTower(nn.Module):
         self.config = SigLipVisionConfig()
 
         self.vision_tower_name = vision_tower
+        self.select_layer = vision_tower_cfg.mm_vision_select_layer
 
         self.image_processor = SigLipImageProcessor()
 
@@ -583,7 +584,7 @@ class SigLipVisionTower(nn.Module):
                 image_features.append(image_feature)
         else:
             image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
-            image_features = image_forward_outs.hidden_states[-1].to(images.dtype)
+            image_features = image_forward_outs.hidden_states[self.select_layer].to(images.dtype)
             assert image_features.shape[-2] == 729
 
         return image_features
