@@ -544,6 +544,8 @@ class SigLipVisionTower(nn.Module):
         self.config = SigLipVisionConfig()
 
         self.vision_tower_name = vision_tower
+
+        # [CUSTOM]
         self.select_layer = vision_tower_cfg.mm_vision_select_layer
 
         self.image_processor = SigLipImageProcessor()
@@ -568,7 +570,10 @@ class SigLipVisionTower(nn.Module):
 
         self.vision_tower = SigLipVisionModel.from_pretrained(self.vision_tower_name, device_map=device_map)
 
-        del self.vision_tower.vision_model.encoder.layers[-1:]
+        # [CUSTOM]
+        del self.vision_tower.vision_model.encoder.layers[self.select_layer:]
+        # del self.vision_tower.vision_model.encoder.layers[-1:]
+
         self.vision_tower.vision_model.head = nn.Identity()
         self.vision_tower.requires_grad_(False)
 
@@ -584,7 +589,7 @@ class SigLipVisionTower(nn.Module):
                 image_features.append(image_feature)
         else:
             image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
-            image_features = image_forward_outs.hidden_states[self.select_layer].to(images.dtype)
+            image_features = image_forward_outs.hidden_states[-1].to(images.dtype)
             assert image_features.shape[-2] == 729
 
         return image_features
