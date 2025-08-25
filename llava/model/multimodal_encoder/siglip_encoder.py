@@ -579,18 +579,29 @@ class SigLipVisionTower(nn.Module):
 
         self.is_loaded = True
 
-    def forward(self, images):
+    def forward(self, images, output_hidden_states: bool = False):
         if type(images) is list:
             image_features = []
             for image in images:
                 image_forward_out = self.vision_tower(image.to(device=self.device, dtype=self.dtype).unsqueeze(0), output_hidden_states=True)
-                image_feature = image_forward_out.hidden_states[-1].to(image.dtype)
-                assert image_features.shape[-2] == 729
-                image_features.append(image_feature)
+
+                if output_hidden_states:
+                    hidden_states = [h.to(image.dtype) for h in image_forward_out.hidden_states]
+                    assert hidden_states[-1].shape[-2] == 729
+                    image_features.append(hidden_states)
+                else:
+                    image_feature = image_forward_out.hidden_states[-1].to(image.dtype)
+                    assert image_features.shape[-2] == 729
+                    image_features.append(image_feature)
+
         else:
             image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
-            image_features = image_forward_outs.hidden_states[-1].to(images.dtype)
-            assert image_features.shape[-2] == 729
+            if output_hidden_states:
+                image_features = [h.to(images.dtype) for h in image_forward_outs.hidden_states]
+                assert image_features[-1].shape[-2] == 729
+            else:
+                image_features = image_forward_outs.hidden_states[-1].to(images.dtype)
+                assert image_features.shape[-2] == 729
 
         return image_features
 
