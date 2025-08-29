@@ -472,6 +472,9 @@ class LlavaMetaForCausalLM(ABC):
                 new_input_embeds.append(cur_input_embeds)
                 new_labels.append(labels[batch_idx])
                 cur_image_idx += 1
+
+                # CUSTOM
+                image_masks.append(torch.ones(len(cur_input_embeds)).bool().to(self.device))
                 continue
 
             image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
@@ -568,9 +571,9 @@ class LlavaMetaForCausalLM(ABC):
         # rank0_print("tokenizer padding")
 
         # [CUSTOM] pad image masks
-        if getattr(self.config, "tokenizer_padding_side", "right") == "left":
+        if getattr(self.config, "tokenizer_padding_side", "right") == "left" and len(image_masks) > 0:
             image_masks = torch.stack([nn.functional.pad(m, (max_len - len(m), 0), value=True) for m in image_masks], dim=0)
-        else:
+        elif len(image_masks) > 0:
             image_masks = torch.stack([nn.functional.pad(m, (0, max_len - len(m)), value=True) for m in image_masks], dim=0)
         # print('after stack', image_masks, image_masks.sum(), image_masks.shape)
 

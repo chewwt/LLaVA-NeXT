@@ -571,8 +571,8 @@ class SigLipVisionTower(nn.Module):
         self.vision_tower = SigLipVisionModel.from_pretrained(self.vision_tower_name, device_map=device_map)
 
         # [CUSTOM]
-        del self.vision_tower.vision_model.encoder.layers[self.select_layer:]
-        # del self.vision_tower.vision_model.encoder.layers[-1:]
+        # del self.vision_tower.vision_model.encoder.layers[self.select_layer:]
+        del self.vision_tower.vision_model.encoder.layers[-1:]
 
         self.vision_tower.vision_model.head = nn.Identity()
         self.vision_tower.requires_grad_(False)
@@ -588,7 +588,12 @@ class SigLipVisionTower(nn.Module):
                 if output_hidden_states:
                     hidden_states = [h.to(image.dtype) for h in image_forward_out.hidden_states]
                     assert hidden_states[-1].shape[-2] == 729
-                    image_features.append(hidden_states)
+                    if len(image_features) == 0:
+                        image_features = hidden_states
+                    else:
+                        # stack to get list of len (n_vit layers,), where each element is a tensor of (N*M, 729, HIDDEN_SIZE)
+                        for i, h in enumerate(hidden_states):
+                            image_features[i] = torch.stack((image_features[i], h))
                 else:
                     image_feature = image_forward_out.hidden_states[-1].to(image.dtype)
                     assert image_features.shape[-2] == 729
@@ -598,6 +603,7 @@ class SigLipVisionTower(nn.Module):
             image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
             if output_hidden_states:
                 image_features = [h.to(images.dtype) for h in image_forward_outs.hidden_states]
+                # list of len (n_vit layers,), where each element is a tensor of (N*M, 729, HIDDEN_SIZE), N is the number of images, M is the number of patch for each image
                 assert image_features[-1].shape[-2] == 729
             else:
                 image_features = image_forward_outs.hidden_states[-1].to(images.dtype)
